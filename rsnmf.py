@@ -1,7 +1,11 @@
-import numpy as np
-from load_data import load_ratings
-from sklearn.externals import joblib
 import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.externals import joblib
+
+from util import update_puk, update_qik, calculate_rmse, calculate_delta
 
 
 class RSNMF():
@@ -47,45 +51,17 @@ class RSNMF():
             itemup = np.zeros([self.max_itemid + 1, self.k])
             itemdown = np.zeros([self.max_itemid + 1, self.k])
 
-            for rating in ratings:
-                userid = rating[0]
-                itemid = rating[1]
-                rui = rating[2]
-                ruihat = self.P[userid].dot(self.Q[itemid].T)
-
-                for i in range(self.k):
-                    userup[userid][i] += self.Q[itemid][i] * rui
-                    userdown[userid][i] += self.Q[itemid][i] * ruihat
-                    itemup[itemid][i] += self.P[userid][i] * rui
-                    itemdown[itemid][i] += self.P[userid][i] * ruihat
+            calculate_delta(ratings, self.P, self.Q, userup, userdown, itemup, itemdown)
 
             # update puk
-            for uid in range(1, self.max_userid + 1):
-                for i in range(self.k):
-                    userdown[uid][i] += self.Iu[uid] * self.lmda * self.P[uid][i]
-                    if userdown[uid][i] != 0:
-                        self.P[uid][i] *= (userup[uid][i] / userdown[uid][i])
+            update_puk(self.max_userid, self.k, self.Iu, self.lmda, self.P, userdown, userup)
             # update qik
-            for iid in range(1, self.max_itemid + 1):
-                for i in range(self.k):
-                    itemdown[iid][i] += self.Ui[iid] * self.lmda * self.Q[iid][i]
-                    if itemdown[iid][i] != 0:
-                        self.Q[iid][i] *= (itemup[iid][i] / itemdown[iid][i])
+            update_qik(self.max_itemid, self.k, self.Ui, self.lmda, self.Q, itemdown, itemup)
 
             # current RMSE on test set
-            sum, count = 0, 0
-            for tr in test:  # tr short for test rating
-                userid = tr[0]
-                itemid = tr[1]
-                rui = tr[2]
-                ruihat = self.P[userid].dot(self.Q[itemid].T)
-                sum += (rui - ruihat) ** 2
-                count += 1
-
-            rmse = np.sqrt(sum / count)
+            rmse = calculate_rmse(test, self.P, self.Q)
             print(rmse)
             f.write('{}\n'.format(rmse))
-            f.flush()
             rmses.append(rmse)
 
             # record
@@ -108,18 +84,39 @@ class RSNMF():
 
         return rmses
 
+    def predict(self, userid, itemid):
 
-def predict(self, userid, itemid):
-    """
-    :param userid:
-    :param itemid:
-    :return:
-    """
-    return self.P[userid].dot(self.Q[itemid].T)
+        """
+        :param userid:
+        :param itemid:
+        :return:
+        """
+        return self.P[userid].dot(self.Q[itemid].T)
+
+
+def plot_rmse():
+    rmses = []
+    with open('./logs/1556594371.2918932_k-20_lambda-0.06.txt', 'r') as f:
+        for line in f.readlines():
+            try:
+                rmses.append(float(line.strip('\n')))
+            except ValueError:
+                break
+    print(rmses)
+    plt.plot(rmses, label='lambda = 0.06 , k = 20')
+    plt.ylim(0.8, 1.8)
+    plt.legend(loc='upper right')
+    plt.show()
 
 
 if __name__ == '__main__':
-    train = load_ratings('./train.txt')
-    test = load_ratings('./test.txt')
+    # train = load_ratings('./data/train.txt')
+    # test = load_ratings('./data/test.txt')
+    df = pd.read_csv('./data/train_ratings_df.csv')
+    train = df.values
+    df = pd.read_csv('./data/test_ratings_df.csv')
+    test = df.values
+
     rsnmf = RSNMF()
     rmses = rsnmf.fit(train, test)
+    # plot_rmse()
